@@ -1,0 +1,554 @@
+import discord
+from discord.ext import commands
+from discord import app_commands
+from googletrans import Translator
+import os
+from dotenv import load_dotenv
+import re
+
+# Load environment variables
+load_dotenv()
+TOKEN = os.getenv('DISCORD_TOKEN')
+
+# Create bot with intents
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix='!', intents=intents)
+
+# Initialize translator
+translator = Translator()
+
+# Dictionary to track auto-translation per channel
+auto_translate_channels = {}  # {channel_id: {'enabled': bool, 'target_lang': 'en', 'expand_slang': bool, 'censor': bool}}
+
+# Portuguese slang dictionary
+PORTUGUESE_SLANG = {
+    'vc': 'você',
+    'tbm': 'também',
+    'tb': 'também',
+    'msg': 'mensagem',
+    'blz': 'beleza',
+    'tmj': 'tamo junto',
+    'vlw': 'valeu',
+    'flw': 'falou',
+    'ñ': 'não',
+    'n': 'não',
+    'pq': 'porque',
+    'oq': 'o que',
+    'td': 'tudo',
+    'tds': 'todos',
+    'mt': 'muito',
+    'mto': 'muito',
+    'cmg': 'comigo',
+    'aq': 'aqui',
+    'aki': 'aqui',
+    'obg': 'obrigado',
+    'obgd': 'obrigado',
+    'dms': 'demais',
+    'dmais': 'demais',
+    'blz?': 'beleza?',
+    'k': 'que',
+    'kd': 'cadê',
+    'cadê': 'cadê',
+    'tlg': 'tá ligado',
+    'tmj!': 'tamo junto!',
+    'boa': 'boa',
+    'sqn': 'só que não',
+    'haha': 'haha',
+    'kkkk': 'kkk',
+    'sdds': 'saudade',
+    'sadd': 'saudade',
+    'nada ñ': 'nada não',
+    'to': 'estou',
+    'tô': 'estou',
+    'cê': 'você',
+    'smp': 'sempre',
+    'msg': 'mensagem',
+    'add': 'adiciona',
+    'tá': 'está',
+    'ta': 'está',
+    'pdc': 'pode crer',
+    'vlw ai': 'valeu aí',
+    'brigadão': 'obrigado',
+    'brigadinho': 'obrigado',
+    'xau': 'tchau',
+    'tchau': 'tchau',
+    'até': 'até',
+    'beijo': 'beijo',
+    'bjão': 'beijo',
+}
+
+# Multilingual slur/profanity dictionary
+SLURS = {
+    # English
+    'fuck': True,
+    'shit': True,
+    'damn': True,
+    'ass': True,
+    'bitch': True,
+    'bastard': True,
+    'crap': True,
+    'piss': True,
+    'dick': True,
+    'cock': True,
+    'pussy': True,
+    'asshole': True,
+    'idiot': True,
+    'stupid': True,
+    'dumbass': True,
+    'jackass': True,
+    'motherfucker': True,
+    'fuckhead': True,
+    'shithead': True,
+    'nigga': True,
+    'nigger': True,
+    'faggot': True,
+    'retard': True,
+    'whore': True,
+    'slut': True,
+    
+    # Portuguese
+    'porra': True,
+    'merda': True,
+    'caralho': True,
+    'inferno': True,
+    'droga': True,
+    'vadia': True,
+    'putaria': True,
+    'desgraçado': True,
+    'maldito': True,
+    'puto': True,
+    'puta': True,
+    'cu': True,
+    'culo': True,
+    'filha da puta': True,
+    'filho da puta': True,
+    'foda': True,
+    'bosta': True,
+    'cretino': True,
+    'imbecil': True,
+    'idiota': True,
+    'retardado': True,
+    
+    # Spanish
+    'mierda': True,
+    'pendejo': True,
+    'jodido': True,
+    'puta': True,
+    'putada': True,
+    'maricón': True,
+    'chingada': True,
+    'cabrón': True,
+    'culo': True,
+    'pinche': True,
+    'tonto': True,
+    'idiota': True,
+    'bastardo': True,
+    'hijo de puta': True,
+    'mamada': True,
+    'verga': True,
+    'pito': True,
+    
+    # French
+    'merde': True,
+    'putain': True,
+    'salaud': True,
+    'connard': True,
+    'foutre': True,
+    'enculé': True,
+    'bâtard': True,
+    'con': True,
+    'débile': True,
+    'imbécile': True,
+    'connerie': True,
+    'chieur': True,
+    
+    # German
+    'scheiße': True,
+    'scheisse': True,
+    'verdammt': True,
+    'arschloch': True,
+    'schwachkopf': True,
+    'idiot': True,
+    'dummkopf': True,
+    'miststück': True,
+    'fotze': True,
+    'verdammter': True,
+    
+    # Italian
+    'cazzo': True,
+    'porco': True,
+    'merda': True,
+    'bastardo': True,
+    'idiota': True,
+    'cretino': True,
+    'stronzo': True,
+    'figlio di puttana': True,
+    'vaffanculo': True,
+    'sorca': True,
+    
+    # Japanese
+    'クソ': True,  # kuso
+    '糞': True,    # fun
+    'バカ': True,  # baka
+    'アホ': True,  # aho
+    'めくら': True,  # mekura
+    
+    # Russian
+    'блядь': True,
+    'мать': True,
+    'хуй': True,
+    'говно': True,
+    'сука': True,
+    'ублюдок': True,
+    'дебил': True,
+    
+    # Korean
+    '시발': True,
+    '씨발': True,
+    '개년': True,
+    '개소리': True,
+    '병신': True,
+}
+
+# Language codes mapping
+LANGUAGES = {
+    'portuguese': 'pt',
+    'pt': 'pt',
+    'english': 'en',
+    'en': 'en',
+    'spanish': 'es',
+    'es': 'es',
+    'french': 'fr',
+    'fr': 'fr',
+    'german': 'de',
+    'de': 'de',
+    'italian': 'it',
+    'it': 'it',
+    'japanese': 'ja',
+    'ja': 'ja',
+    'chinese': 'zh-CN',
+    'zh': 'zh-CN',
+    'russian': 'ru',
+    'ru': 'ru',
+    'korean': 'ko',
+    'ko': 'ko',
+}
+
+def expand_portuguese_slang(text):
+    """Convert Portuguese slang to proper Portuguese"""
+    expanded_text = text
+    words = text.lower().split()
+    
+    for i, word in enumerate(words):
+        # Remove punctuation for matching but keep it
+        clean_word = word.rstrip('!?.,:;')
+        punctuation = word[len(clean_word):]
+        
+        if clean_word in PORTUGUESE_SLANG:
+            words[i] = PORTUGUESE_SLANG[clean_word] + punctuation
+    
+    return ' '.join(words)
+
+def censor_slurs(text):
+    """Censor slurs and profanities in text"""
+    censored_text = text
+    
+    # Sort by length (longest first) to avoid partial replacements
+    sorted_slurs = sorted(SLURS.keys(), key=len, reverse=True)
+    
+    for slur in sorted_slurs:
+        # Create regex pattern that matches the slur case-insensitively
+        # and preserves surrounding text
+        pattern = re.compile(re.escape(slur), re.IGNORECASE)
+        
+        # Replace with censored version (f*** with asterisks matching slur length)
+        censored_version = 'f' + '*' * (len(slur) - 1)
+        censored_text = pattern.sub(censored_version, censored_text)
+    
+    return censored_text
+
+def perform_translation(text, target_lang, source_lang='auto', expand_slang=True, censor=True):
+    """Perform translation and return results"""
+    original_text = text
+    
+    # Censor slurs first if enabled
+    if censor:
+        text = censor_slurs(text)
+    
+    # Expand Portuguese slang if enabled
+    if expand_slang and source_lang.lower() in ['pt', 'portuguese', 'auto']:
+        text = expand_portuguese_slang(text)
+    
+    # Normalize language input
+    target_lang_code = LANGUAGES.get(target_lang.lower(), target_lang.lower())
+    
+    # Translate
+    translation = translator.translate(text, src_language=source_lang, dest_language=target_lang_code)
+    translated_text = translation["text"]
+    
+    # Censor translated text
+    if censor:
+        translated_text = censor_slurs(translated_text)
+    
+    return {
+        'original': original_text,
+        'censored': text if censor else original_text,
+        'translated': translated_text,
+        'source_lang': translation["src"],
+        'target_lang': target_lang_code
+    }
+
+@bot.event
+async def on_ready():
+    print(f'{bot.user} has connected to Discord!')
+    try:
+        synced = await bot.tree.sync()
+        print(f'Synced {len(synced)} command(s)')
+    except Exception as e:
+        print(f'Failed to sync commands: {e}')
+
+@bot.event
+async def on_message(message):
+    """Handle auto-translation for enabled channels"""
+    if message.author == bot.user:
+        return
+    
+    channel_id = message.channel.id
+    
+    # Check if auto-translation is enabled for this channel
+    if channel_id in auto_translate_channels and auto_translate_channels[channel_id]['enabled']:
+        config = auto_translate_channels[channel_id]
+        
+        try:
+            # Skip command messages
+            if message.content.startswith('!'):
+                await bot.process_commands(message)
+                return
+            
+            # Perform translation
+            result = perform_translation(
+                message.content,
+                config['target_lang'],
+                'auto',
+                config['expand_slang'],
+                config['censor']
+            )
+            
+            # Create response
+            response = f"**{message.author.name}:** {result['original']}\n\n**Translation:** {result['translated']}"
+            
+            await message.reply(response, mention_author=False)
+        except Exception as e:
+            print(f"Auto-translation error: {e}")
+    
+    await bot.process_commands(message)
+
+@bot.command(name='startT')
+async def start_translation(ctx, target_language: str = 'en', expand_slang: bool = True, censor: bool = True):
+    """Start automatic translation in this channel"""
+    channel_id = ctx.channel.id
+    
+    # Validate language
+    target_lang_code = LANGUAGES.get(target_language.lower(), target_language.lower())
+    
+    auto_translate_channels[channel_id] = {
+        'enabled': True,
+        'target_lang': target_lang_code,
+        'expand_slang': expand_slang,
+        'censor': censor
+    }
+    
+    embed = discord.Embed(
+        title='Auto-Translation Enabled ✅',
+        color=discord.Color.green(),
+        description=f'All messages in this channel will now be automatically translated to **{target_language.upper()}**'
+    )
+    embed.add_field(name='Settings', value=f'**Expand Slang:** {expand_slang}\n**Censor Profanities:** {censor}', inline=False)
+    embed.add_field(name='Stop Translation', value='Use `!stopT` to disable auto-translation', inline=False)
+    
+    await ctx.send(embed=embed)
+
+@bot.command(name='stopT')
+async def stop_translation(ctx):
+    """Stop automatic translation in this channel"""
+    channel_id = ctx.channel.id
+    
+    if channel_id in auto_translate_channels:
+        auto_translate_channels[channel_id]['enabled'] = False
+    
+    embed = discord.Embed(
+        title='Auto-Translation Disabled ✅',
+        color=discord.Color.red(),
+        description='Auto-translation has been turned off in this channel.'
+    )
+    embed.add_field(name='Start Again', value='Use `!startT [language]` to enable auto-translation', inline=False)
+    
+    await ctx.send(embed=embed)
+
+@bot.tree.command(name='translate', description='Translate text to another language')
+@app_commands.describe(
+    text='The text to translate',
+    target_language='Target language (e.g., english, portuguese, spanish)',
+    source_language='Source language (leave blank for auto-detect)',
+    expand_slang='Expand Portuguese slang before translating (default: True)',
+    censor='Censor profanities (default: True)'
+)
+async def translate_command(
+    interaction: discord.Interaction,
+    text: str,
+    target_language: str,
+    source_language: str = 'auto',
+    expand_slang: bool = True,
+    censor: bool = True
+):
+    """Translate text from one language to another"""
+    await interaction.response.defer()
+    
+    try:
+        result = perform_translation(text, target_language, source_language, expand_slang, censor)
+        
+        # Create embed response
+        embed = discord.Embed(
+            title='Translation Result',
+            color=discord.Color.blue()
+        )
+        embed.add_field(name='Original', value=result['original'], inline=False)
+        
+        if censor and result['original'] != result['censored']:
+            embed.add_field(name='Censored', value=result['censored'], inline=False)
+        
+        embed.add_field(name='Translated', value=result['translated'], inline=False)
+        embed.set_footer(text=f'From: {result["source_lang"]} | To: {result["target_lang"]}')
+        
+        await interaction.followup.send(embed=embed)
+    except Exception as e:
+        embed = discord.Embed(
+            title='Translation Error',
+            description=f'An error occurred: {str(e)}',
+            color=discord.Color.red()
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+@bot.tree.command(name='censor', description='Censor profanities in text')
+@app_commands.describe(text='The text to censor')
+async def censor_command(interaction: discord.Interaction, text: str):
+    """Censor slurs and profanities"""
+    censored = censor_slurs(text)
+    
+    embed = discord.Embed(
+        title='Profanity Censor',
+        color=discord.Color.red()
+    )
+    embed.add_field(name='Original', value=text, inline=False)
+    embed.add_field(name='Censored', value=censored, inline=False)
+    
+    if text == censored:
+        embed.description = '✅ No profanities detected'
+    else:
+        embed.description = '🚫 Profanities censored'
+    
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name='expand_slang', description='Expand Portuguese slang to proper Portuguese')
+@app_commands.describe(text='The text with Portuguese slang', censor='Censor profanities (default: True)')
+async def expand_slang_command(interaction: discord.Interaction, text: str, censor: bool = True):
+    """Convert Portuguese slang to proper Portuguese"""
+    original_text = text
+    expanded = expand_portuguese_slang(text)
+    
+    if censor:
+        original_text = censor_slurs(original_text)
+        expanded = censor_slurs(expanded)
+    
+    embed = discord.Embed(
+        title='Portuguese Slang Expansion',
+        color=discord.Color.green()
+    )
+    embed.add_field(name='Original (Slang)', value=original_text, inline=False)
+    embed.add_field(name='Expanded (Proper)', value=expanded, inline=False)
+    
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name='pt_to_en', description='Quick translate Portuguese to English')
+@app_commands.describe(
+    text='The Portuguese text to translate',
+    expand_slang='Expand slang before translating (default: True)',
+    censor='Censor profanities (default: True)'
+)
+async def pt_to_en_command(interaction: discord.Interaction, text: str, expand_slang: bool = True, censor: bool = True):
+    """Quick Portuguese to English translation"""
+    await interaction.response.defer()
+    
+    try:
+        result = perform_translation(text, 'en', 'pt', expand_slang, censor)
+        
+        embed = discord.Embed(
+            title='Portuguese → English',
+            color=discord.Color.purple()
+        )
+        embed.add_field(name='Original (PT)', value=result['original'], inline=False)
+        
+        if censor and result['original'] != result['censored']:
+            embed.add_field(name='Censored (PT)', value=result['censored'], inline=False)
+        
+        embed.add_field(name='Translation (EN)', value=result['translated'], inline=False)
+        
+        await interaction.followup.send(embed=embed)
+    except Exception as e:
+        await interaction.followup.send(f'Error: {str(e)}', ephemeral=True)
+
+@bot.tree.command(name='en_to_pt', description='Quick translate English to Portuguese')
+@app_commands.describe(text='The English text to translate', censor='Censor profanities (default: True)')
+async def en_to_pt_command(interaction: discord.Interaction, text: str, censor: bool = True):
+    """Quick English to Portuguese translation"""
+    await interaction.response.defer()
+    
+    try:
+        result = perform_translation(text, 'pt', 'en', False, censor)
+        
+        embed = discord.Embed(
+            title='English → Portuguese',
+            color=discord.Color.gold()
+        )
+        embed.add_field(name='Original (EN)', value=result['original'], inline=False)
+        
+        if censor and result['original'] != result['censored']:
+            embed.add_field(name='Censored (EN)', value=result['censored'], inline=False)
+        
+        embed.add_field(name='Translation (PT)', value=result['translated'], inline=False)
+        
+        await interaction.followup.send(embed=embed)
+    except Exception as e:
+        await interaction.followup.send(f'Error: {str(e)}', ephemeral=True)
+
+@bot.tree.command(name='slang_list', description='Show supported Portuguese slang')
+async def slang_list_command(interaction: discord.Interaction):
+    """Display list of supported Portuguese slang"""
+    slang_text = '\n'.join([f'**{k}** → {v}' for k, v in sorted(PORTUGUESE_SLANG.items())])
+    
+    embed = discord.Embed(
+        title='Supported Portuguese Slang',
+        description=slang_text,
+        color=discord.Color.orange()
+    )
+    embed.set_footer(text=f'Total: {len(PORTUGUESE_SLANG)} slang terms')
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name='languages', description='List all supported languages')
+async def languages_command(interaction: discord.Interaction):
+    """Show all supported languages"""
+    lang_list = ', '.join(sorted(set(LANGUAGES.keys())))
+    
+    embed = discord.Embed(
+        title='Supported Languages',
+        description=lang_list,
+        color=discord.Color.green()
+    )
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# Run the bot
+if __name__ == '__main__':
+    bot.run(TOKEN)
