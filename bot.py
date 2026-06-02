@@ -319,7 +319,7 @@ def main():
         print("DISCORD_TOKEN=your_token_here")
         return
     
-    bot.run(token)
+    bot.run (t)
 
 if __name__ == "__main__":
     main()
